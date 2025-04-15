@@ -18,11 +18,11 @@ import copy
 
 
 from models import model
-from utils.fl_utils import EMA_cls_Fs, cluster_Fs, getClsPrototypes, getClusDict, get_exp_avg, model_diff, avg_EW_per_4, avg_EW_per_4_, downloadGLBweights, uploadLCweightsandGLBupdate, avg_EW, get_client_weights4
+from utils.fl_utils import EMA_cls_Fs, cluster_Fs, getClsPrototypes, getClusDict, get_exp_avg, model_diff, avg_EW_per_4, avg_EW_per_4_, downloadGLBweights, avg_EW, get_client_weights4
 from utils.lr_scheduler import LR_Scheduler
 from utils import criterions
 from dataset.datasets import Brats_test, Brats_train, GLB_Brats_train
-from options_18 import args_parser
+from options import args_parser
 from utils.predict import global_test, local_test, test_softmax
 
 from multiprocessing import Pool
@@ -223,6 +223,33 @@ def global_training(args, device, dataloader, model, modal_protos, round, optimi
 
     return model.state_dict(), glb_Fs, glb_Pnames, exp_avg
 
+def uploadLCweightsandGLBupdate(masks, server_model, local_weights, train_loader, protos, round, client_weights_per, optimizer):
+    
+    model_old = copy.deepcopy(server_model)
+
+    lc1_mask, lc2_mask, lc3_mask, lc4_mask = masks[0], masks[1], masks[2], masks[3]
+    modals_E = []
+    for i in range(len(lc1_mask)):  # 针对每一个模态的特异编码器
+        c_E = avg_EW([local_weights[c][i] for c in range(len(local_weights))], [masks[c][i] for c in range(len(local_weights))])
+        modals_E.append(c_E)
+
+    c_D, clients_weights = avg_EW_per_4([local_weights[i][-1] for i in range(len(local_weights))], client_weights_per)
+
+    c_D = avg_EW_per_4_(c_D, server_model.decoder_fuse.state_dict(), clients_weights, retain_ratio = 0.3)
+
+    server_model.c1_encoder.load_state_dict(modals_E[0])
+    server_model.c2_encoder.load_state_dict(modals_E[1])
+    server_model.c3_encoder.load_state_dict(modals_E[2])
+    server_model.c4_encoder.load_state_dict(modals_E[3])
+    server_model.decoder_fuse.load_state_dict(c_D)
+    
+    ### global training
+    glb_w, glb_protos, glb_Pnames, exp_avg = global_training(args, args.device, glb_trainloader, server_model, None, round, optimizer)   
+
+    exp_avg = model_diff(model_old, server_model)
+
+    return glb_w, glb_protos, glb_Pnames, client_weights_per, exp_avg
+
 if __name__ == '__main__':
     ### global model - 4 模态特异Encoder & 1 模态融合Decoder
     ### local model - 模态特异Encoder & Decoder
@@ -252,9 +279,54 @@ if __name__ == '__main__':
     writer = SummaryWriter(os.path.join(args.save_path, 'TBlog'))
     
     ##### modality missing mask
-    masks = [[True, False, False, False], [False, True, False, False], [False, False, True, False], [False, False, False, True]]
-    masks = [[True,  True, True,  False], [True,  False, True,  True], [True, True, False, False], [False, False, True, True], 
+    if "m3" in args.setting_options:
+        masks = [[True, True, True, True], [True, True, True,False], [True, False, True, True], [True, True, False, True], [False, True, True, True]]
+        mask_name = ['flairt1cet1t2', 'flairt1cet1', 'flairt1cet2', 'flairt1t2', 't1cet1t2']
+    elif "m2" == args.setting_options:
+        masks = [[True, True, True, True], [True, True, False,False],  [False, True, False, True], [True, False, False, True], [False, True, True, False], [False, False, True, True], [True, False, True, False]]
+        mask_name = ['flairt1cet1t2', 'flairt1ce', 't1t2', 'flairt1', 't1cet2', 'flairt2', 't1cet1']
+    elif "m1" in args.setting_options:
+        masks = [[True, True, True, True], [True, False, False,False], [False, True, False, False], [False, False, True, False], [False, False, False, True]]
+        mask_name = ['flairt1cet1t2', 'flair', 't1ce', 't1', 't2']
+    elif "c8" in args.setting_options:
+        masks = [[True, True, True, True], [True,  True, True,  False], [True,  False, True,  True], [True, True, False, False], [False, False, True, True], 
              [False, True, False, False], [False, False, False, True], [True,  True,  True, True], [True,  True,  True, True]]
+        mask_name = ['m1111', 'm1110', 'm1011', 'm1100', 'm0011', 'm0100', 'm0001', 'm1111', 'm1111']
+    
+    if "c8" in args.setting_options:
+        if args.dataname == "BRATS2020":
+            args.train_file = {'glb':"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/server.csv", 
+                                    1:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c1.csv", 
+                                    2:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c2.csv", 
+                                    3:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c3.csv", 
+                                    4:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c4.csv",
+                                    5:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c5.csv", 
+                                    6:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c6.csv", 
+                                    7:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c7.csv", 
+                                    8:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c8.csv"}
+        else:
+            args.train_file = {'glb':"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/server.csv", 
+                                    1:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c1.csv", 
+                                    2:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c2.csv", 
+                                    3:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c3.csv", 
+                                    4:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c4.csv",
+                                    5:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c5.csv", 
+                                    6:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c6.csv", 
+                                    7:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c7.csv", 
+                                    8:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c8.csv"}
+    else:
+        args.train_file = {'glb':"/apdcephfs_cq10/share_1290796/lh/FedMEMA/FedMEMA_pure_code/split/18_c4_c6/glb.csv", 
+                1:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/FedMEMA_pure_code/split/18_c4_c6/c1.csv", 
+                2:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/FedMEMA_pure_code/split/18_c4_c6/c2.csv", 
+                3:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/FedMEMA_pure_code/split/18_c4_c6/c3.csv", 
+                4:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/FedMEMA_pure_code/split/18_c4_c6/c4.csv",
+                5:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/FedMEMA_pure_code/split/18_c4_c6/c5.csv", 
+                6:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/FedMEMA_pure_code/split/18_c4_c6/c6.csv"
+                }
+
+        args.valid_file = "/apdcephfs_cq10/share_1290796/lh/FedMEMA/FedMEMA_pure_code/split/18_c4_c6/val.csv"
+        args.test_file = "/apdcephfs_cq10/share_1290796/lh/FedMEMA/FedMEMA_pure_code/split/18_c4_c6/test.csv"
+    
     masks_torch = torch.from_numpy(np.array(masks))
     mask_name = ['flair', 't1ce', 't1', 't2']
     logging.info(masks_torch.int())
@@ -274,8 +346,9 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
     args.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     args.local_devices = []
+    args.num_devices = torch.cuda.device_count()
     for i in range(args.client_num):
-        args.local_devices.append(torch.device('cuda:{}'.format(i%4)))
+        args.local_devices.append(torch.device('cuda:{}'.format(i%4))) # use 4 gpus
     
     ########## setting global and local model
     server_model = model.E4D4Model(num_cls=args.num_class, is_lc=False)
@@ -315,26 +388,7 @@ if __name__ == '__main__':
         client_count_per.append(c_count)
         client_weights_per.append(c_weight)    
 
-    if args.dataname == "BRATS2020":
-        args.train_file = {'glb':"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/server.csv", 
-                                1:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c1.csv", 
-                                2:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c2.csv", 
-                                3:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c3.csv", 
-                                4:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c4.csv",
-                                5:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c5.csv", 
-                                6:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c6.csv", 
-                                7:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c7.csv", 
-                                8:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/20_c8_heter_modalnum/c8.csv"}
-    else:
-        args.train_file = {'glb':"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/server.csv", 
-                                1:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c1.csv", 
-                                2:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c2.csv", 
-                                3:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c3.csv", 
-                                4:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c4.csv",
-                                5:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c5.csv", 
-                                6:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c6.csv", 
-                                7:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c7.csv", 
-                                8:"/apdcephfs_cq10/share_1290796/lh/FedMEMA/split/18_c8_heter_modalnum/c8.csv"}
+    
     modal_list = ['flair', 't1ce', 't1', 't2']
     logging.info(str(args))
 
@@ -393,24 +447,12 @@ if __name__ == '__main__':
     if args.resume != 0:
         
         ckpt = torch.load(args.modelfile_path + '/last.pth')
-        server_model.load_state_dict(ckpt["server"])
-        model_clients[0].load_state_dict(ckpt["c1"])
-        model_clients[1].load_state_dict(ckpt["c2"])
-        model_clients[2].load_state_dict(ckpt["c3"])
-        model_clients[3].load_state_dict(ckpt["c4"])
-        model_clients[4].load_state_dict(ckpt["c5"])
-        model_clients[5].load_state_dict(ckpt["c6"])
-        model_clients[6].load_state_dict(ckpt["c7"])
-        model_clients[7].load_state_dict(ckpt["c8"])
+        
+        for client_i in range(args.client_num):
+            model_clients[i].load_state_dict(clients_dict[client_i])
+            optimizer_clients[i].load_state_dict(clients_optim_dict[client_i])
 
-        optimizer_clients[0].load_state_dict(ckpt["o1"]),
-        optimizer_clients[1].load_state_dict(ckpt["o2"]),
-        optimizer_clients[2].load_state_dict(ckpt["o3"]),
-        optimizer_clients[3].load_state_dict(ckpt["o4"]),
-        optimizer_clients[4].load_state_dict(ckpt["o5"]),
-        optimizer_clients[5].load_state_dict(ckpt["o6"]),
-        optimizer_clients[6].load_state_dict(ckpt["o7"]),
-        optimizer_clients[7].load_state_dict(ckpt["o8"]),
+        server_model.load_state_dict(ckpt["server"])
         optimizer_server.load_state_dict(ckpt["os"]), 
 
 
@@ -429,8 +471,6 @@ if __name__ == '__main__':
         exp_avg = ckpt["exp_avg"]
     
 
-    
-    
     Xscale_list = ['x1', 'x2', 'x3', 'x4', 'x1_4']
     ########## FL Training ##########
     for round in tqdm(range(args.start_round, args.c_rounds+1)):
@@ -470,16 +510,23 @@ if __name__ == '__main__':
             
             result = []
 
+            branch_num = args.client_num // args.num_devices
+            if branch_num % args.num_devices:
+                branch_num += 1
             
-            for branch in range(2):
+            for branch in range(branch_num):
                 
                 torch.cuda.empty_cache()
                 ctx = torch.multiprocessing.get_context("spawn")
                 
-                pool = ctx.Pool(args.client_num // 2)    
+                pool = ctx.Pool(args.num_devices)    
                 
-                for client_i_ in range(4):
-                    client_i = client_i_ + branch * 4
+                for client_i_ in range(args.num_devices):
+                    client_i = client_i_ + branch * args.num_devices
+                    
+                    if client_i >= args.client_num:
+                            break
+
                     result.append(pool.apply_async(local_training, args=(args, args.local_devices[client_i], masks_torch[client_i], dataloader_clients[client_i], model_clients[client_i], client_i, global_Fs, round, optimizer_clients[client_i], )))
                     
                 
@@ -529,15 +576,23 @@ if __name__ == '__main__':
             with torch.no_grad():
                 # test clients
                 results = []
-                for branch in range(2):
+                branch_num = args.client_num // args.num_devices
+                if branch_num % args.num_devices:
+                    branch_num += 1
+
+                for branch in range(branch_num):
                 
                     torch.cuda.empty_cache()
                     ctx = torch.multiprocessing.get_context("spawn")
                     
-                    pool = ctx.Pool(args.client_num // 2)
+                    pool = ctx.Pool(args.num_devices)
                     
-                    for c_ in range(args.client_num // 2):
-                        c = branch * 4 + c_
+                    for c_ in range(args.num_devices):
+                        c = branch * args.num_devices + c_
+                        
+                        if c >= args.client_num:
+                            break
+                        
                         results.append(pool.apply_async(local_test, (args, validloader_clients[c], model_clients[c], args.local_devices[c], 'BRATS2020', global_Fs, masks[c],)))
                 
                     pool.close()
@@ -584,25 +639,11 @@ if __name__ == '__main__':
             torch.save({
             
             'round': round + 1,
+            
+            "clients_dict": [model_clients[client_i].state_dict() for client_i in range(args.client_num)],
+            "clients_optim_dict": [optimizer_clients[client_i].state_dict() for client_i in range(args.client_num)],
+            
             'server': server_model.state_dict(),
-            'c1': model_clients[0].state_dict(),
-            'c2': model_clients[1].state_dict(),
-            'c3': model_clients[2].state_dict(),
-            'c4': model_clients[3].state_dict(),
-            'c5': model_clients[4].state_dict(),
-            'c6': model_clients[5].state_dict(),
-            'c7': model_clients[6].state_dict(),
-            'c8': model_clients[7].state_dict(),
-
-            'o1': optimizer_clients[0].state_dict(),
-            'o2': optimizer_clients[1].state_dict(),
-            'o3': optimizer_clients[2].state_dict(),
-            'o4': optimizer_clients[3].state_dict(),
-            'o5': optimizer_clients[4].state_dict(),
-            'o6': optimizer_clients[5].state_dict(),
-            'o7': optimizer_clients[6].state_dict(),
-            'o8': optimizer_clients[7].state_dict(),
-
             'os': optimizer_server.state_dict(),
 
             'cls_glb_clusDict':cls_glb_clusDict,
