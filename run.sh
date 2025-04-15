@@ -1,4 +1,4 @@
-datapath=/apdcephfs_cq10/share_1290796/lh/dataset/BRATS2018_Training_none_npy
+datapath=../dataset/BRATS2018_Training_none_npy
 dataname=BRATS2018
 
 
