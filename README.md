@@ -10,6 +10,6 @@ Implemention of paper "Federated Modality-specific Encoders and Partially Person
 
 ## Train and test process
 1. Download dataset
-2. environment prepare
+2. Environment prepare: pip install -r requirements.txt
 3. Training: Replace the datapath in the training command of run.sh, and run it. After training, the model will be stored in folder "./results". We provide pretrained models, data split as described in our paper, together with the code.
-Testing: Replace the datapath and checkpoint path in the testing command of test.sh, and run it, which will do the test and store result in folder "test_results".
+4. Testing: Replace the datapath and checkpoint path in the testing command of test.sh, and run it, which will do the test and store results in folder "test_results".
