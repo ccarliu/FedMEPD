@@ -5,8 +5,8 @@ Implemention of paper "Federated Modality-specific Encoders and Partially Person
 
 ## Dataset
 
-1. (BraTS 2018 and 2020)[https://drive.google.com/drive/folders/1AwLwGgEBQwesIDTlWpubbwqxxd8brt5A?usp=sharing] 
-2. (HaNSeg)[https://zenodo.org/records/7442914]
+1. [BraTS 2018 and 2020](https://drive.google.com/drive/folders/1AwLwGgEBQwesIDTlWpubbwqxxd8brt5A?usp=sharing)
+2. [HaNSeg](https://zenodo.org/records/7442914)
 
 ## Train and test process
 1. Download dataset
