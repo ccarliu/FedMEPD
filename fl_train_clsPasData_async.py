@@ -27,8 +27,6 @@ from utils.predict import global_test, local_test, test_softmax
 
 from multiprocessing import Pool
 
-patience = 10
-
 def self_cuda(obj, device):
     if isinstance(obj, list):
         return [self_cuda(l, device) for l in obj]
@@ -375,10 +373,10 @@ if __name__ == '__main__':
         for l2, param in enumerate(params_dec):
             if l2%2 and l2 < 172:
                 c_weight.append(torch.ones_like(param.data))
-                c_count.append(torch.ones_like(param.data) * patience)
+                c_count.append(torch.ones_like(param.data) * args.patience)
             elif l2 < 172:
                 c_weight.append(torch.ones(param.data.shape[0]))
-                c_count.append(torch.ones(param.data.shape[0]) * patience)
+                c_count.append(torch.ones(param.data.shape[0]) * args.patience)
                 for l in range(len(param.data.shape) - len(c_weight[-1].shape)):
                     c_weight[-1] = c_weight[-1].unsqueeze(-1)
                     c_count[-1] = c_count[-1].unsqueeze(-1)
@@ -557,7 +555,7 @@ if __name__ == '__main__':
             
             if round > args.pretrain:
                 for l in range(len(client_weights_per)):
-                    client_weights_per[l], client_count_per[l] = get_client_weights4(exp_avg, exp_avg_clients[l], client_weights_per[l], client_count_per[l], client_idx = l) # changed lh
+                    client_weights_per[l], client_count_per[l] = get_client_weights4(exp_avg, exp_avg_clients[l], client_weights_per[l], client_count_per[l], client_idx = l, patience = args.patience) # changed lh
             
 
             for scale in Xscale_list[:4]:

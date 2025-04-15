@@ -15,7 +15,7 @@ import torch.nn.functional as F
 def get_len(t):
     return torch.norm(t,2,1)
 
-def get_client_weights4(exp_avg_s, exp_avg_c, weight_per, count_per, alpha = 0., client_idx = 0):
+def get_client_weights4(exp_avg_s, exp_avg_c, weight_per, count_per, alpha = 0., client_idx = 0, patience = 10):
 
     for index, cweight in enumerate(weight_per):
 
@@ -66,32 +66,6 @@ def avg_EW(ws, ms):
         avg_state_dict[key] = key_sum / count
     return avg_state_dict
 
-def uploadLCweightsandGLBupdate(masks, server_model, local_weights, train_loader, protos, round, client_weights_per, optimizer):
-    
-    model_old = copy.deepcopy(server_model)
-
-    lc1_mask, lc2_mask, lc3_mask, lc4_mask = masks[0], masks[1], masks[2], masks[3]
-    modals_E = []
-    for i in range(len(lc1_mask)):  # 针对每一个模态的特异编码器
-        c_E = avg_EW([local_weights[c][i] for c in range(len(local_weights))], [masks[c][i] for c in range(len(local_weights))])
-        modals_E.append(c_E)
-
-    c_D, clients_weights = avg_EW_per_4([local_weights[i][-1] for i in range(len(local_weights))], client_weights_per)
-
-    c_D = avg_EW_per_4_(c_D, server_model.decoder_fuse.state_dict(), clients_weights, retain_ratio = 0.3)
-
-    server_model.c1_encoder.load_state_dict(modals_E[0])
-    server_model.c2_encoder.load_state_dict(modals_E[1])
-    server_model.c3_encoder.load_state_dict(modals_E[2])
-    server_model.c4_encoder.load_state_dict(modals_E[3])
-    server_model.decoder_fuse.load_state_dict(c_D)
-    
-    ### global training
-    glb_w, glb_protos, glb_Pnames, exp_avg = global_training(args, args.device, glb_trainloader, server_model, None, round, optimizer)   
-
-    exp_avg = model_diff(model_old, server_model)
-
-    return glb_w, glb_protos, glb_Pnames, client_weights_per, exp_avg
 
 def downloadGLBweights(glb_w, model_clients, client_weights_per):
     c1_w = {k.replace('c1_encoder.',''): v.cpu() for k,v in glb_w.items() if 'c1_encoder' in k}

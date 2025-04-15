@@ -33,6 +33,7 @@ def args_parser():
     parser.add_argument('--pretrain', type=int, default=20, help="the number of local epochs: E")
     parser.add_argument('--eval', type=int, default=10, help="the number of local epochs: E")
     parser.add_argument('--iid', type=int, default=1, help='Default set to IID. Set to 0 for non-IID.')
+    parser.add_argument('--patience', default=10, type=int)
 
     # 说明
     parser.add_argument('--version', type=str, default='debug', help='to explain the experiment set up')
