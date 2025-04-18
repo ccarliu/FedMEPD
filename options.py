@@ -8,7 +8,7 @@ def args_parser():
     parser.add_argument('--dataname', default='BRATS2018', type=str)
     parser.add_argument('--chose_modal', default='t1', type=str)
     parser.add_argument('--num_class', default=4, type=int)
-    parser.add_argument('--save_root', default='./', type=str)
+    parser.add_argument('--save_root', default='./results', type=str)
     parser.add_argument('--resume', default=0, type=int)
     parser.add_argument('--optimizer', default='adam', type=str)
     parser.add_argument('--lr', default=2e-4, type=float)
