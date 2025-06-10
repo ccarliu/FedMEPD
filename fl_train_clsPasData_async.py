@@ -551,7 +551,7 @@ if __name__ == '__main__':
 
             ### global training
             
-            glb_w, glb_protos, glb_Pnames, client_weights_per, exp_avg_ = uploadLCweightsandGLBupdate(masks_torch, server_model, local_weights, glb_trainloader, None, round, client_weights_per, optimizer)   
+            glb_w, glb_protos, glb_Pnames, client_weights_per, exp_avg = uploadLCweightsandGLBupdate(masks_torch, server_model, local_weights, glb_trainloader, None, round, client_weights_per, optimizer)   
             
             if round > args.pretrain:
                 for l in range(len(client_weights_per)):
